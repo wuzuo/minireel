@@ -52,6 +52,11 @@ final class PlaybackSession extends ChangeNotifier {
   bool get ready =>
       episode != null && !loadingDetail && !resolving && error == null;
 
+  // True while an episode transition was triggered automatically by the
+  // "play next episode" behavior, so the UI can keep controls hidden.
+  bool _autoAdvancing = false;
+  bool get autoAdvancing => _autoAdvancing;
+
   int _generation = 0;
   CancelToken? _request;
   Timer? _recordTimer;
@@ -486,6 +491,7 @@ final class PlaybackSession extends ChangeNotifier {
     if (_disposed || !_acceptEvents) return;
     snapshot = engine.state.value;
     if (snapshot.error != null) {
+      _autoAdvancing = false;
       _recoverOrFail(snapshot.error!);
       return;
     }
@@ -501,12 +507,16 @@ final class PlaybackSession extends ChangeNotifier {
           canNext &&
           _pauseReasons.isEmpty &&
           _wantPlaying) {
+        _autoAdvancing = true;
         unawaited(next());
       } else {
         _wantPlaying = false;
       }
     }
     _notify();
+    // Clear the auto-advance flag once the next episode is actually playing;
+    // afterwards a manual pause must show the controls again.
+    if (playing && !snapshot.completed) _autoAdvancing = false;
   }
 
   void saveProgress() {

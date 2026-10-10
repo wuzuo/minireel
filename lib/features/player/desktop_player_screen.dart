@@ -56,6 +56,7 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen>
   bool _heldForSystem = false;
   bool _awake = false;
   bool _wasPlaying = false;
+  int _lastIndex = -1;
   bool _closing = false;
   bool _leaving = false;
   bool _allowPop = false;
@@ -98,10 +99,27 @@ class _DesktopPlayerScreenState extends State<DesktopPlayerScreen>
   void _sessionChanged() {
     if (!mounted || _closing) return;
     final playing = _session.playing;
-    if (_wasPlaying != playing) {
-      _wasPlaying = playing;
+    final index = _session.currentIndex;
+    final indexChanged = index != _lastIndex;
+    // When an episode auto-advances while in fullscreen, keep the controls
+    // (and the progress bar) hidden until the mouse enters or playback pauses.
+    final autoHide =
+        indexChanged && _session.autoAdvancing && _window.fullScreen;
+
+    if (_wasPlaying != playing) _wasPlaying = playing;
+
+    if (autoHide) {
+      if (_controlsVisible) setState(() => _controlsVisible = false);
+    } else if (_wasPlaying != playing &&
+        playing &&
+        _session.autoAdvancing &&
+        _window.fullScreen) {
+      // The auto-advanced episode resumed playing: stay hidden.
+      if (_controlsVisible) setState(() => _controlsVisible = false);
+    } else if (_wasPlaying != playing || indexChanged) {
       _showControls();
     }
+    if (indexChanged) _lastIndex = index;
     _updateAwake();
     setState(() {});
   }
