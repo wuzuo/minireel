@@ -44,6 +44,10 @@ class _TVPlayerScreenState extends State<TVPlayerScreen>
   bool _controlsVisible = true;
   bool _sheetOpen = false;
   bool _foreground = true;
+  // 上一帧的「有效播放」状态（正在播放且非缓冲且无 sheet），
+  // 仅在它从 false 跳变为 true 时才启动自动隐藏定时器，
+  // 避免播放中进度 tick 反复刷新定时器导致进度条一直显示。
+  bool _wasPlaying = false;
   bool _awake = false;
   bool _closing = false;
   Timer? _hideTimer;
@@ -137,16 +141,14 @@ class _TVPlayerScreenState extends State<TVPlayerScreen>
       _awake = awake;
       unawaited(_device.keepAwake(awake));
     }
-    // 关键修复：当播放状态从「非播放」变为「正在播放」时，主动（重新）启动
-    // 自动隐藏定时器。否则以下场景控件栏会卡住不隐藏：
-    //  - 初始化时 _showControls 在 playing=false 下调用，定时器到期不隐藏，
-    //    之后开始播放却没人再触发隐藏。
-    //  - 缓冲期间 playing 可能短暂为 false，定时器过期未隐藏，缓冲结束后
-    //    控件栏一直显示。
-    //  - 暂停→恢复，状态切换瞬间可能错过隐藏窗口。
-    if (_session.playing && !_session.buffering && !_sheetOpen) {
+    // 仅在「非播放 → 正在播放」的跳变时启动自动隐藏定时器。
+    // 注意：播放过程中的进度 tick 也会触发本监听，但此时 _wasPlaying 已为
+    // true，不会重置定时器；否则定时器被反复刷新而永远到不了期，进度条一直显示。
+    final playing = _session.playing && !_session.buffering && !_sheetOpen;
+    if (playing && !_wasPlaying) {
       _ensureHideTimer();
     }
+    _wasPlaying = playing;
     setState(() {});
   }
 
