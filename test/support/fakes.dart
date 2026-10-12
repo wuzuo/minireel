@@ -185,6 +185,7 @@ class FakeEngine implements PlaybackEngine {
     required Duration start,
     required bool Function() isCurrent,
     String? episodeId,
+    DecodeMethod? decodeMethod,
   }) async {
     if (openGate != null) await openGate!.future;
     if (!isCurrent() || disposed) return;

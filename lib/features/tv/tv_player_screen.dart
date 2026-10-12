@@ -305,6 +305,19 @@ class _TVPlayerScreenState extends State<TVPlayerScreen>
                 _openQuality();
               },
             ),
+            _menuAction(
+              context,
+              Icons.memory_rounded,
+              _app.preferences.decodeMethod == DecodeMethod.hardware
+                  ? '硬解'
+                  : '软解',
+              () {
+                Navigator.of(context).pop();
+                _openDecode();
+              },
+              active:
+                  _app.preferences.decodeMethod == DecodeMethod.hardware,
+            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -506,6 +519,60 @@ class _TVPlayerScreenState extends State<TVPlayerScreen>
         ),
       );
       if (result != null) unawaited(_session.setQuality(result));
+    } finally {
+      if (mounted && !_closing) {
+        setState(() => _sheetOpen = false);
+        _session.release('sheet');
+        _showControls();
+      }
+    }
+  }
+
+  Future<void> _openDecode() async {
+    _session.hold('sheet');
+    setState(() => _sheetOpen = true);
+    try {
+      final result = await showReelSheet<DecodeMethod>(
+        context,
+        dark: true,
+        builder: (context) => SheetFrame(
+          title: '解码方式',
+          subtitle: '硬件解码更流畅省电，软件解码兼容性更好',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final method in DecodeMethod.values)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: TVFocusable(
+                    radius: 12,
+                    onTap: () => Navigator.of(context).pop(method),
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        method == DecodeMethod.hardware ? '硬件解码' : '软件解码',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: method == _app.preferences.decodeMethod
+                              ? context.colors.primary
+                              : Colors.white,
+                        ),
+                      ),
+                      trailing: method == _app.preferences.decodeMethod
+                          ? Icon(
+                              Icons.check_rounded,
+                              color: context.colors.primary,
+                              size: 20,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (result != null) unawaited(_session.setDecodeMethod(result));
     } finally {
       if (mounted && !_closing) {
         setState(() => _sheetOpen = false);

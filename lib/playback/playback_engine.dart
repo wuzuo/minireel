@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../domain/models/playback_source.dart';
+import '../domain/models/preferences.dart';
 
 final class EngineSnapshot {
   const EngineSnapshot({
@@ -46,6 +47,7 @@ abstract interface class PlaybackEngine {
     required Duration start,
     required bool Function() isCurrent,
     String? episodeId,
+    DecodeMethod? decodeMethod,
   });
   Future<void> stop();
   Future<void> setPlaying(bool playing);

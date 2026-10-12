@@ -8,6 +8,10 @@ enum GestureSensitivity { low, medium, high }
 
 const playbackSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
+/// 视频解码方式。硬件解码走 GPU（如 Android TV 的 mediacodec），更省电流畅；
+/// 软件解码走 CPU，兼容性更好但更耗资源。TV 默认硬件解码。
+enum DecodeMethod { hardware, software }
+
 final class Preferences {
   const Preferences({
     this.appearance = AppAppearance.system,
@@ -23,6 +27,7 @@ final class Preferences {
     this.pauseWhenMinimized = true,
     this.desktopVolume = .75,
     this.prefetchNextEpisode = true,
+    this.decodeMethod = DecodeMethod.hardware,
     this.remoteKeyMap,
   });
 
@@ -39,6 +44,7 @@ final class Preferences {
   final bool pauseWhenMinimized;
   final double desktopVolume;
   final bool prefetchNextEpisode;
+  final DecodeMethod decodeMethod;
   /// 遥控器按键映射。null 表示用默认映射（未自定义）。
   final RemoteKeyMap? remoteKeyMap;
 
@@ -56,6 +62,7 @@ final class Preferences {
     bool? pauseWhenMinimized,
     double? desktopVolume,
     bool? prefetchNextEpisode,
+    DecodeMethod? decodeMethod,
     RemoteKeyMap? remoteKeyMap,
   }) => Preferences(
     appearance: appearance ?? this.appearance,
@@ -71,6 +78,7 @@ final class Preferences {
     pauseWhenMinimized: pauseWhenMinimized ?? this.pauseWhenMinimized,
     desktopVolume: desktopVolume ?? this.desktopVolume,
     prefetchNextEpisode: prefetchNextEpisode ?? this.prefetchNextEpisode,
+    decodeMethod: decodeMethod ?? this.decodeMethod,
     remoteKeyMap: remoteKeyMap ?? this.remoteKeyMap,
   );
 
@@ -88,6 +96,7 @@ final class Preferences {
     'pauseWhenMinimized': pauseWhenMinimized,
     'desktopVolume': desktopVolume,
     'prefetchNextEpisode': prefetchNextEpisode,
+    'decodeMethod': decodeMethod.name,
     if (remoteKeyMap != null) 'remoteKeyMap': remoteKeyMap!.toJson(),
   };
 
@@ -116,6 +125,10 @@ final class Preferences {
         ? (json['desktopVolume'] as num).toDouble().clamp(0, 1)
         : .75,
     prefetchNextEpisode: json['prefetchNextEpisode'] != false,
+    decodeMethod: DecodeMethod.values.firstWhere(
+      (value) => value.name == json['decodeMethod'],
+      orElse: () => DecodeMethod.hardware,
+    ),
     remoteKeyMap: json['remoteKeyMap'] is Map
         ? RemoteKeyMap.fromJson(json['remoteKeyMap'] as Map<String, dynamic>)
         : null,

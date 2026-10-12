@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../domain/models/playback_source.dart';
+import '../domain/models/preferences.dart';
 import 'playback_engine.dart';
 
 final class _Slot {
@@ -28,6 +29,9 @@ class BufferedPlaybackEngine
   final PlaybackEngine Function(bool preloading) _createEngine;
   late _Slot _active;
   _Slot? _standby;
+  // Decode method applied when opening media; mirrors the active preference
+  // and is used for both the foreground player and the prefetched standby.
+  DecodeMethod _decodeMethod = DecodeMethod.hardware;
   int _preloadGeneration = 0;
   bool _disposed = false;
   bool _stopped = true;
@@ -123,6 +127,7 @@ class BufferedPlaybackEngine
         start: Duration.zero,
         isCurrent: valid,
         episodeId: episodeId,
+        decodeMethod: _decodeMethod,
       );
     })();
     _surfacesChanged();
@@ -144,9 +149,11 @@ class BufferedPlaybackEngine
     required Duration start,
     required bool Function() isCurrent,
     String? episodeId,
+    DecodeMethod? decodeMethod,
   }) => _serialize(() async {
     bool valid() => !_disposed && isCurrent();
     if (!valid()) return;
+    if (decodeMethod != null) _decodeMethod = decodeMethod;
     final prepared = _standby;
     final canPromote =
         prepared != null &&
@@ -189,6 +196,7 @@ class BufferedPlaybackEngine
         start: start,
         isCurrent: valid,
         episodeId: episodeId,
+        decodeMethod: _decodeMethod,
       );
     }
     _stopped = false;

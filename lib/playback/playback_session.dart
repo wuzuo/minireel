@@ -8,6 +8,7 @@ import '../core/errors/app_exception.dart';
 import '../core/network/app_http_client.dart';
 import '../domain/models/drama.dart';
 import '../domain/models/playback_source.dart';
+import '../domain/models/preferences.dart';
 import '../domain/models/watch_record.dart';
 import 'playback_engine.dart';
 import 'next_episode_prefetch.dart';
@@ -47,6 +48,7 @@ final class PlaybackSession extends ChangeNotifier {
   Duration get position => snapshot.position;
   Duration get duration => snapshot.duration;
   double get rate => temporaryBoost ? 2 : app.preferences.speed;
+  DecodeMethod get decodeMethod => app.preferences.decodeMethod;
   bool get canPrevious => currentIndex > 0;
   bool get canNext => currentIndex + 1 < episodes.length;
   bool get ready =>
@@ -191,6 +193,7 @@ final class PlaybackSession extends ChangeNotifier {
         start: resume,
         isCurrent: () => _current(generation),
         episodeId: episodes[index].id,
+        decodeMethod: decodeMethod,
       );
       if (!_current(generation)) return;
       await engine.setRate(rate);
@@ -485,6 +488,25 @@ final class PlaybackSession extends ChangeNotifier {
     );
     _wantPlaying = wasWanted;
     release('quality');
+  }
+
+  /// 切换解码方式（硬件/软件）。解码器在打开媒体时建立，因此切换后需重新
+  /// 打开当前集以生效，并保留当前播放进度。
+  Future<void> setDecodeMethod(DecodeMethod method) async {
+    if (method == decodeMethod) return;
+    app.setPreferences(app.preferences.copyWith(decodeMethod: method));
+    final resume = position;
+    final wasWanted = _wantPlaying;
+    hold('decode');
+    await _loadEpisode(
+      currentIndex,
+      resume: resume,
+      fallbackOnly: _usingFallback,
+      startRoute: _route,
+      preserveIntent: true,
+    );
+    _wantPlaying = wasWanted;
+    release('decode');
   }
 
   void _onEngine() {

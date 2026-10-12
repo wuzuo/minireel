@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:minireel/core/errors/app_exception.dart';
 import 'package:minireel/domain/models/playback_source.dart';
+import 'package:minireel/domain/models/preferences.dart';
 import 'package:minireel/playback/buffered_playback_engine.dart';
 
 import 'support/fakes.dart';
@@ -16,6 +17,7 @@ class _FailingEngine extends FakeEngine {
     required Duration start,
     required bool Function() isCurrent,
     String? episodeId,
+    DecodeMethod? decodeMethod,
   }) async => throw const AppException('Decoder unavailable');
 }
 

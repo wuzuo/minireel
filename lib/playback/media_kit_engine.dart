@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../core/errors/app_exception.dart';
 import '../domain/models/playback_source.dart';
+import '../domain/models/preferences.dart';
 import 'buffered_playback_engine.dart';
 import 'playback_engine.dart';
 import 'native_error_guard.dart';
@@ -95,6 +96,7 @@ final class _MediaKitPlayer implements PlaybackEngine {
     required Duration start,
     required bool Function() isCurrent,
     String? episodeId,
+    DecodeMethod? decodeMethod,
   }) => _serialize(() async {
     bool valid() => !_disposed && isCurrent();
     if (!valid()) return;
@@ -104,6 +106,11 @@ final class _MediaKitPlayer implements PlaybackEngine {
     if (!valid()) return;
     final native = player.platform;
     if (native is NativePlayer) {
+      // Decode via GPU when hardware is selected, otherwise force software.
+      await native.setProperty(
+        'hwdec',
+        decodeMethod == DecodeMethod.software ? 'no' : 'auto',
+      );
       if (source.kind == PlaybackKind.cenc && source.contentKey?.length != 16) {
         throw const AppException('本集播放信息不完整，请重试');
       }
