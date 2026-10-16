@@ -114,20 +114,23 @@ Map<String, dynamic> _detail({int total = 2}) => {
 };
 Map<String, dynamic> _media() => {
   'data': {
-    'video_model': {
-      'video_duration': 12.5,
-      'video_list': {
-        'unsupported': {
-          'main_url': 'https://media.invalid/2160.mp4',
-          'video_meta': {'codec_type': 'bytevc2', 'definition': '2160p'},
-        },
-        'hevc': {
-          'main_url': 'https://media.invalid/hevc.mp4',
-          'video_meta': {'codec_type': 'hevc', 'definition': '1080p'},
-        },
-        'avc': {
-          'main_url': 'https://media.invalid/avc.mp4',
-          'video_meta': {'codec_type': 'h264', 'definition': '1080p'},
+    // 真实接口按 vid 分桶:data[vid].video_model。
+    '201': {
+      'video_model': {
+        'video_duration': 12.5,
+        'video_list': {
+          'unsupported': {
+            'main_url': 'https://media.invalid/2160.mp4',
+            'video_meta': {'codec_type': 'bytevc2', 'definition': '2160p'},
+          },
+          'hevc': {
+            'main_url': 'https://media.invalid/hevc.mp4',
+            'video_meta': {'codec_type': 'hevc', 'definition': '1080p'},
+          },
+          'avc': {
+            'main_url': 'https://media.invalid/avc.mp4',
+            'video_meta': {'codec_type': 'h264', 'definition': '1080p'},
+          },
         },
       },
     },
