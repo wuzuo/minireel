@@ -80,6 +80,14 @@ class CoverImage extends StatelessWidget {
       ),
     );
     if (drama.coverUrl.isEmpty) return placeholder();
+    // 红果 App 接口的封面是 HEIC 签名图（p*-reading-sign.fqnovelpic.com/...heic，
+    // 带 x-signature）。Android/TV 用系统解码器能直接解 HEIC；但 Windows 的
+    // Skia 没有 HEIC 编解码器，Image.network 直接解码失败 → 大量封面空白。
+    //
+    // 同一张图在字节未签名 CDN 上以相同 path 提供，且改扩展名会真实转码。因此
+    // Windows 上把 HEIC 签名地址改写为 p*-novel.byteimg.com 的 .jpeg 变体
+    // （去掉签名 query，体积更小且 Skia 必然能解）。其余平台保留原 HEIC 地址。
+    final url = windowsCoverUrl(drama.coverUrl) ?? drama.coverUrl;
     // TV/低端设备性能优化：按显示尺寸解码，避免把原图(可达 800×1200)整张
     // 解码进内存。卡片显示宽约 175 逻辑像素，按 2x DPR 给 350 像素足够清晰，
     // 内存占用降一个数量级，解码也更快。
@@ -90,7 +98,7 @@ class CoverImage extends StatelessWidget {
     // 解码完整 HEIC，再由 Flutter 按显示尺寸缩放。
     final useCacheWidth = defaultTargetPlatform != TargetPlatform.macOS;
     return Image.network(
-      drama.coverUrl,
+      url,
       fit: fit,
       cacheWidth: useCacheWidth ? 350 : null,
       excludeFromSemantics: true,
@@ -100,6 +108,29 @@ class CoverImage extends StatelessWidget {
           synchronous || frame != null ? child : placeholder(),
     );
   }
+}
+
+/// 红果 App 封面是 HEIC 签名图，Windows(Skia) 无法解码。改写为同图未签名的
+/// byteimg.com JPEG 变体。仅当确为 fqnovelpic 的 HEIC 签名地址才改写，其它
+/// 来源（如 web 榜单的 byteimg .image/.webp 封面）原样返回。
+String? windowsCoverUrl(String url) {
+  if (defaultTargetPlatform != TargetPlatform.windows) return null;
+  return heicToByteimgJpeg(url);
+}
+
+/// 红果 App 封面是 HEIC 签名图（p*-reading-sign.fqnovelpic.com/...heic）。
+/// 同一张图在字节未签名 CDN 上以相同 path 提供，且改扩展名会真实转码为 JPEG。
+/// 返回改写后的 p*-novel.byteimg.com .jpeg 地址；若并非此类地址则返回 null。
+/// 仅当确为 fqnovelpic 的 HEIC 签名地址才改写，其它来源原样返回。
+String? heicToByteimgJpeg(String url) {
+  final match = RegExp(
+    r'^https?://(p\d+)-reading-sign\.fqnovelpic\.com(/[^?]*?)\.heic(\?|$)',
+    caseSensitive: false,
+  ).firstMatch(url);
+  if (match == null) return null;
+  final prefix = match.group(1)!;
+  final path = match.group(2)!;
+  return 'https://$prefix-novel.byteimg.com$path.jpeg';
 }
 
 class DramaCard extends StatelessWidget {
