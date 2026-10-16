@@ -290,6 +290,11 @@ class DesktopWindow extends ChangeNotifier with WindowListener {
     _closing = true;
     _saveTimer?.cancel();
     await _operations;
+    // 先把窗口状态落盘，这一步需要原生窗口句柄，必须在 destroy 之前完成。
+    await _saveBounds();
+    // 立即销毁窗口，让关闭动作对用户瞬时可见；其余重量级销毁（播放器、SQLite）
+    // 放到 destroy 之后，在进程退出期间的事件循环中继续完成，避免关闭时卡顿。
+    if (_native) await windowManager.destroy();
     for (final prepare in [onPlayerClose, onAppClose]) {
       try {
         await prepare?.call();
@@ -297,8 +302,6 @@ class DesktopWindow extends ChangeNotifier with WindowListener {
         debugPrint('Window shutdown: $error');
       }
     }
-    await _saveBounds();
-    if (_native) await windowManager.destroy();
   }
 
   Future<void> _saveBounds() =>
