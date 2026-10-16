@@ -18,14 +18,34 @@ final class HongguoMediaService {
     String videoId, {
     CancelToken? cancelToken,
   }) async {
-    final result = await client.post('/novel/player/video_model/v1/', {
-      'video_id': videoId,
-      'content_type': 1,
-      'biz_param': {'need_all_video_definition': true, 'video_platform': 3},
-    }, cancelToken: cancelToken);
-    final value = objectMap(result['data'])['video_model'];
+    // 红果取播放地址必须走 preload 入口 + video_platform=1024 +
+    // mixed_video_id_map 的 key "1"，并带完整签名(见 HongguoAppClient)。
+    // 旧端点 /novel/player/video_model/v1/ + platform=3 已被服务端静默返回空体。
+    final result = await client.post(
+      '/novel/player/multi_video_model/preload/v1',
+      {
+        'biz_param': {
+          'detail_page_version': 0,
+          'device_level': 3,
+          'disable_digg_stat': false,
+          'disable_video_relate_book': false,
+          'need_all_video_definition': true,
+          'need_mp4_align': false,
+          'use_os_player': false,
+          'use_server_dns': false,
+          'video_platform': 1024,
+        },
+        'dr_scene': 'preload',
+        'mixed_video_id_map': {'1': [videoId]},
+      },
+      cancelToken: cancelToken,
+    );
+    final data = objectMap(result['data']);
+    final value = objectMap(data[videoId])['video_model'];
+    if (value == null) throw const AppException('App 未返回该集播放信息');
     try {
-      return parse(objectMap(value is String ? jsonDecode(value) : value));
+      final model = value is String ? jsonDecode(value) : value;
+      return parse(objectMap(model));
     } on FormatException {
       throw const AppException('App 播放信息格式异常');
     }
@@ -52,7 +72,8 @@ final class HongguoMediaService {
       final uri = mediaUri(field(variant, ['main_url']));
       if (uri == null) continue;
       final encryption = objectMap(variant['encrypt_info']);
-      final spade = field(encryption, ['spade_a']);
+      // 优先顶层 spade_a；encrypt_info.spade_a 作为兜底(不同接口返回位置不一致)。
+      final spade = field(variant, ['spade_a'], field(encryption, ['spade_a']));
       final encrypted =
           spade.isNotEmpty ||
           encryption['encrypt'] == true ||

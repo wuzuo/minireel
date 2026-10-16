@@ -1,61 +1,107 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:pointycastle/digests/md5.dart';
+import 'package:pointycastle/export.dart';
 
-/// Sign the exact encoded query and UTF-8 body sent on the wire.
-Map<String, String> signHongguoRequest(Uri uri, String body, DateTime now) {
-  final payload = Uint8List(20);
-  final hash = MD5Digest().process(Uint8List.fromList(utf8.encode(body)));
-  payload.setRange(
-    0,
-    4,
-    MD5Digest().process(Uint8List.fromList(utf8.encode(uri.query))),
-  );
-  payload.setRange(4, 8, hash);
-  payload.setRange(12, 16, [0, 6, 11, 28]);
-  final seconds = now.millisecondsSinceEpoch ~/ 1000;
-  ByteData.sublistView(payload).setUint32(16, seconds);
-  const key = [
-    0x44,
-    0xb9,
-    0xb9,
-    0xd9,
-    0xa4,
-    0xae,
-    0xf9,
-    0xfc,
-    0xa4,
-    0x93,
-    0xaa,
-    0x75,
-    0x7c,
-    0xa3,
-    0xc2,
-    0xc4,
-    0xa4,
-    0x96,
-    0x93,
-    0x8f,
-  ];
-  for (var i = 0; i < 20; i++) {
-    payload[i] ^= key[i];
+/// X-Gorgon / X-Argus 等端内请求签名,移植自 hgtv-tv 的 Signer.kt
+/// (GPL-3.0, 源自 drpys)。红果取播放地址的接口必须带完整签名,
+/// 否则网关静默返回 200 + 空体(见 HongguoApi.kt 注释)。
+///
+/// 实测仅需 X-Gorgon + X-Argus + X-Khronos + X-Ladon 即可通过校验,
+/// 无需对 query 做 branch=0 的偏移搜索(那是 X-Medusa 的约束)。
+final class HongguoSigner {
+  const HongguoSigner();
+
+  /// 为给定 query + body 生成签名头。按 hgtv-tv `Signer.sign` 的实测可用子集。
+  Map<String, String> sign(Uri uri, String body, DateTime now) {
+    final query = uri.query;
+    final bodyBytes = Uint8List.fromList(utf8.encode(body));
+    final seconds = now.millisecondsSinceEpoch ~/ 1000;
+    final ticket = now.millisecondsSinceEpoch;
+    final random = Random().nextInt(65536);
+    final bodyMd5 = MD5Digest().process(bodyBytes);
+    final xssStub = _hex(bodyMd5).toUpperCase();
+    final gorgon = _gorgon(query, bodyBytes, seconds, random);
+    final argus = base64Encode(_le32(seconds));
+    final ladon = base64Encode(_be32(seconds));
+    return {
+      'X-Khronos': '$seconds',
+      'X-Gorgon': gorgon,
+      'X-Argus': argus,
+      'X-Ladon': ladon,
+      'X-SS-STUB': xssStub,
+      'X-SS-Req-Ticket': '$ticket',
+      'X-TT-Request-Tag': 't=0;n=0',
+      'passport-sdk-version': '50561',
+      'X-XS-From-Web': '0',
+      'X-TT-Dt': '',
+    };
   }
-  for (var i = 0; i < 20; i++) {
-    final mixed =
-        (((payload[i] << 4) | (payload[i] >> 4)) & 255) ^ payload[(i + 1) % 20];
-    var reversed = 0;
-    for (var bit = 0; bit < 8; bit++) {
-      reversed = (reversed << 1) | ((mixed >> bit) & 1);
+
+  String _gorgon(String query, List<int> body, int ts, int random) {
+    final queryMd5 = MD5Digest().process(
+      Uint8List.fromList(utf8.encode(query)),
+    );
+    final bodyMd5 = MD5Digest().process(Uint8List.fromList(body));
+    final input = <int>[
+      ...queryMd5.sublist(0, 4),
+      ...bodyMd5.sublist(0, 4),
+      ...List.filled(4, 0),
+      ..._le32(67503104),
+      ..._be32(ts),
+    ];
+    final key = [
+      0x4a,
+      0x40,
+      0x16,
+      (random >> 8) & 255,
+      0x47,
+      0x6c,
+      1,
+      random & 255,
+    ];
+    final s = List<int>.generate(256, (i) => i);
+    var j = 0;
+    for (var i = 0; i < 256; i++) {
+      j = (j + s[i] + key[i % 8]) & 255;
+      final t = s[i];
+      s[i] = s[j];
+      s[j] = t;
     }
-    payload[i] = reversed ^ 255 ^ 20;
+    j = 0;
+    final out = List<int>.filled(input.length, 0);
+    for (var n = 0; n < input.length; n++) {
+      final i = n + 1;
+      j += s[i & 255];
+      final y = s[j & 255];
+      s[i & 255] = y;
+      out[n] = input[n] ^ s[(y + y) & 255];
+    }
+    for (var i = 0; i < out.length; i++) {
+      final value = ((out[i] >> 4) | (out[i] << 4)) & 255;
+      final next = out[i + 1 < out.length ? i + 1 : 0];
+      final reversed = (_reverse32((next ^ value) & 255) >>> 24) & 255;
+      out[i] = (~(reversed ^ 20)) & 255;
+    }
+    final prefix = <int>[0x84, 0x04, random & 255, (random >> 8) & 255, 0x40, 1, ...out];
+    return _hex(prefix);
   }
-  String hex(List<int> bytes) =>
+
+  int _reverse32(int x) {
+    var r = 0;
+    for (var i = 0; i < 32; i++) {
+      r = (r << 1) | ((x >> i) & 1);
+    }
+    return r;
+  }
+
+  List<int> _le32(int n) =>
+      [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255];
+
+  List<int> _be32(int n) =>
+      [(n >> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255];
+
+  String _hex(List<int> bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return {
-    'X-Khronos': '$seconds',
-    'X-Gorgon': hex([0x84, 4, 0x40, 0x1c, 0, 0, ...payload]),
-    'X-SS-STUB': hex(hash).toUpperCase(),
-    'X-SS-Req-Ticket': '${now.millisecondsSinceEpoch}',
-  };
 }

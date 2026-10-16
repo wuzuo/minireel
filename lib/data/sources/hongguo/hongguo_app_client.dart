@@ -24,18 +24,17 @@ final class HongguoAppClient {
 
   Future<void> _loadIdentity() async {
     final saved = await store?.readSourceState('hongguo:identity');
+    // 红果服务端会风控固定的静态设备号,这里改用 16 位随机号(对齐 hgtv-tv 的
+    // VendorConstants,已实测签名可过)。旧的 19 位号会被重新生成为 16 位。
     String identity(dynamic value) {
-      if (value is String && RegExp(r'^[0-9]{1,32}$').hasMatch(value)) {
+      if (value is String && RegExp(r'^[0-9]{16}$').hasMatch(value)) {
         return value;
       }
+      // nextInt 上限为 2^32-1,9e15 超出会抛错,故用 nextDouble 生成 16 位随机号。
       final random = Random.secure();
-      var number = BigInt.zero;
-      for (var i = 0; i < 8; i++) {
-        number = (number << 8) | BigInt.from(random.nextInt(256));
-      }
-      return (BigInt.parse('1000000000000000000') +
-              number % BigInt.parse('8000000000000000000'))
-          .toString();
+      final number =
+          1000000000000000 + (random.nextDouble() * 9000000000000000).floor();
+      return number.toString();
     }
 
     _deviceId = identity(saved?['deviceId']);
@@ -62,17 +61,20 @@ final class HongguoAppClient {
     cancelToken?.throwIfCancellationRequested();
     final body = jsonEncode(payload);
     late DateTime now;
+    final signer = const HongguoSigner();
     final text = await (transport as SignedJsonClient).postSignedJson(
       () {
         now = DateTime.now();
+        final seconds = now.millisecondsSinceEpoch ~/ 1000;
         final parameters = {
           ...config.appParameters,
-          'device_id': _deviceId,
           'iid': _installId,
+          'device_id': _deviceId,
+          'ts': '$seconds',
           '_rticket': '${now.millisecondsSinceEpoch}',
         };
         final keys = parameters.keys.toList()..sort();
-        // Match Go url.Values.Encode; sign this exact ordering and encoding.
+        // 签名的 gorgon 计算于此处构造的 query;二者必须完全一致。
         final query = keys
             .map(
               (key) =>
@@ -85,11 +87,10 @@ final class HongguoAppClient {
       (uri) => {
         ...config.appHeaders,
         'User-Agent': config.appUserAgent,
-        'Accept': 'application/json',
+        'Accept': 'application/json; charset=utf-8,application/x-protobuf',
         'Content-Type': 'application/json; charset=utf-8',
-        'X-XS-From-Web': '0',
         'Sdk-Version': '2',
-        ...signHongguoRequest(uri, body, now),
+        ...signer.sign(uri, body, now),
       },
       cancelToken: cancelToken,
     );
